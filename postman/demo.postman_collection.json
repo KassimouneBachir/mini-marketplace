@@ -1,0 +1,196 @@
+{
+  "info": {
+    "name": "demo - Spring Modulith",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "vendeurId", "value": "" },
+    { "key": "acheteurId", "value": "" },
+    { "key": "produitId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Vendeurs",
+      "item": [
+        {
+          "name": "Creer un vendeur",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('vendeurId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Atelier Kassi\",\n  \"email\": \"atelier@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/vendeurs", "host": ["{{baseUrl}}"], "path": ["vendeurs"] }
+          }
+        },
+        {
+          "name": "Lister les vendeurs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/vendeurs", "host": ["{{baseUrl}}"], "path": ["vendeurs"] }
+          }
+        },
+        {
+          "name": "Consulter un vendeur",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/vendeurs/{{vendeurId}}", "host": ["{{baseUrl}}"], "path": ["vendeurs", "{{vendeurId}}"] }
+          }
+        },
+        {
+          "name": "Modifier un vendeur",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Atelier Kassi Modifie\",\n  \"email\": \"atelier2@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/vendeurs/{{vendeurId}}", "host": ["{{baseUrl}}"], "path": ["vendeurs", "{{vendeurId}}"] }
+          }
+        },
+        {
+          "name": "Supprimer un vendeur",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/vendeurs/{{vendeurId}}", "host": ["{{baseUrl}}"], "path": ["vendeurs", "{{vendeurId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Acheteurs",
+      "item": [
+        {
+          "name": "Creer un acheteur",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('acheteurId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Gardi\",\n  \"email\": \"gardi@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/acheteurs", "host": ["{{baseUrl}}"], "path": ["acheteurs"] }
+          }
+        },
+        {
+          "name": "Lister les acheteurs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/acheteurs", "host": ["{{baseUrl}}"], "path": ["acheteurs"] }
+          }
+        },
+        {
+          "name": "Consulter un acheteur",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/acheteurs/{{acheteurId}}", "host": ["{{baseUrl}}"], "path": ["acheteurs", "{{acheteurId}}"] }
+          }
+        },
+        {
+          "name": "Modifier un acheteur",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Gardi Modifie\",\n  \"email\": \"gardi2@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/acheteurs/{{acheteurId}}", "host": ["{{baseUrl}}"], "path": ["acheteurs", "{{acheteurId}}"] }
+          }
+        },
+        {
+          "name": "Supprimer un acheteur",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/acheteurs/{{acheteurId}}", "host": ["{{baseUrl}}"], "path": ["acheteurs", "{{acheteurId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Produits",
+      "item": [
+        {
+          "name": "Creer un produit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('produitId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Sac tisse\",\n  \"description\": \"Fait main\",\n  \"prix\": 25.50,\n  \"quantiteStock\": 10,\n  \"vendeurId\": {{vendeurId}}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/produits", "host": ["{{baseUrl}}"], "path": ["produits"] }
+          }
+        },
+        {
+          "name": "Lister les produits",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/produits", "host": ["{{baseUrl}}"], "path": ["produits"] }
+          }
+        },
+        {
+          "name": "Consulter un produit",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/produits/{{produitId}}", "host": ["{{baseUrl}}"], "path": ["produits", "{{produitId}}"] }
+          }
+        },
+        {
+          "name": "Modifier un produit",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nom\": \"Sac tisse XL\",\n  \"description\": \"Fait main, grand format\",\n  \"prix\": 32.00,\n  \"quantiteStock\": 6\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/produits/{{produitId}}", "host": ["{{baseUrl}}"], "path": ["produits", "{{produitId}}"] }
+          }
+        },
+        {
+          "name": "Supprimer un produit",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/produits/{{produitId}}", "host": ["{{baseUrl}}"], "path": ["produits", "{{produitId}}"] }
+          }
+        }
+      ]
+    }
+  ]
+}
