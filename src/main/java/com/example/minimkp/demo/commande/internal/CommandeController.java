@@ -43,4 +43,9 @@ class CommandeController {
     List<LigneCommande> lignes(@PathVariable Long id) {
         return commandeService.lignesDe(id);
     }
+
+    @GetMapping("/{id}/historique")
+    List<HistoriqueEtatCommande> historique(@PathVariable Long id) {
+        return commandeService.historiqueDe(id);
+    }
 }

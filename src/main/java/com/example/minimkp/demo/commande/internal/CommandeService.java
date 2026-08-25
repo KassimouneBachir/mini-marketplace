@@ -2,8 +2,11 @@ package com.example.minimkp.demo.commande.internal;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,14 +27,26 @@ class CommandeService {
 
     private static final Logger log = LoggerFactory.getLogger(CommandeService.class);
 
+    // Machine d'etat explicite : source unique de verite pour "quel etat peut
+    // devenir quel etat". CREEE n'apparait jamais comme cle car ce n'est
+    // jamais une cible de transition (c'est l'etat initial, fixe dans creer()).
+    // CLOTUREE et ANNULEE ne sont pas encore cablees a des evenements - a
+    // faire quand les flux de cloture/annulation seront construits.
+    private static final Map<EnumEtatCommande, Set<EnumEtatCommande>> TRANSITIONS_AUTORISEES = Map.of(
+            EnumEtatCommande.PAYEE, EnumSet.of(EnumEtatCommande.CREEE),
+            EnumEtatCommande.EXPEDIEE, EnumSet.of(EnumEtatCommande.PAYEE),
+            EnumEtatCommande.LIVREE, EnumSet.of(EnumEtatCommande.PAYEE, EnumEtatCommande.EXPEDIEE));
+
     private final CommandeRepository commandeRepository;
     private final LigneCommandeRepository ligneCommandeRepository;
+    private final HistoriqueEtatCommandeRepository historiqueRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     CommandeService(CommandeRepository commandeRepository, LigneCommandeRepository ligneCommandeRepository,
-            ApplicationEventPublisher eventPublisher) {
+            HistoriqueEtatCommandeRepository historiqueRepository, ApplicationEventPublisher eventPublisher) {
         this.commandeRepository = commandeRepository;
         this.ligneCommandeRepository = ligneCommandeRepository;
+        this.historiqueRepository = historiqueRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -49,6 +64,14 @@ class CommandeService {
                 .dateCreation(Instant.now())
                 .build();
         commande = commandeRepository.save(commande);
+
+        historiqueRepository.save(HistoriqueEtatCommande.builder()
+                .commandeId(commande.getId())
+                .etatAvant(null)
+                .etatDemande(EnumEtatCommande.CREEE)
+                .accepte(true)
+                .horodatage(commande.getDateCreation())
+                .build());
 
         BigDecimal montantTotal = BigDecimal.ZERO;
         for (CreationCommandeRequest.LigneRequest ligneRequete : requete.lignes()) {
@@ -79,64 +102,60 @@ class CommandeService {
         return ligneCommandeRepository.findByCommandeId(commandeId);
     }
 
+    List<HistoriqueEtatCommande> historiqueDe(Long commandeId) {
+        return historiqueRepository.findByCommandeIdOrderByHorodatageAsc(commandeId);
+    }
+
     // @ApplicationModuleListener regroupe @Async + @Transactional(REQUIRES_NEW)
     // + @TransactionalEventListener(AFTER_COMMIT) : cette methode s'execute
     // sur un thread separe, dans sa propre transaction, une fois que paiement
     // a lui-meme commite la publication de PaiementEffectueEvent.
     @ApplicationModuleListener
     void surPaiementEffectue(PaiementEffectueEvent event) {
-        appliquerTransition(event.commandeId(), EnumEtatCommande.PAYEE, EnumEtatCommande.CREEE);
+        appliquerTransition(event.commandeId(), EnumEtatCommande.PAYEE);
     }
 
-    // N'accepte EXPEDIEE que depuis PAYEE : si LIVREE a deja ete applique
-    // (LivraisonEffectueEvent traite avant CommandeExpedieeEvent - possible,
-    // aucun ordre garanti entre listeners @Async independants), l'etat courant
-    // sera LIVREE et non PAYEE, donc cette transition est refusee. Voulu :
-    // EXPEDIEE precede LIVREE dans le cycle de vie, un retour en arriere
-    // n'a pas de sens metier. Le verrou pessimiste de appliquerTransition
-    // garantit que cette lecture voit bien l'etat a jour (pas une version
-    // perimee lue avant l'ecriture concurrente de surLivraisonEffectuee).
     @ApplicationModuleListener
     void surCommandeExpediee(CommandeExpedieeEvent event) {
-        appliquerTransition(event.commandeId(), EnumEtatCommande.EXPEDIEE, EnumEtatCommande.PAYEE);
+        appliquerTransition(event.commandeId(), EnumEtatCommande.EXPEDIEE);
     }
 
-    // Accepte LIVREE depuis PAYEE OU EXPEDIEE : contrairement a surCommandeExpediee,
-    // on tolere ici que la livraison "double" l'expedition si son evenement
-    // arrive en premier - on prefere ne jamais perdre le fait "livre" (l'etat
-    // final le plus important) plutot que d'exiger un ordre strict. Cout
-    // connu : si CommandeExpedieeEvent arrive ensuite, il sera rejete par la
-    // garde ci-dessus et l'horodatage d'expedition ne sera jamais enregistre -
-    // limite acceptee pour l'instant, a combler par l'historique de l'etape
-    // machine d'etat.
     @ApplicationModuleListener
     void surLivraisonEffectuee(LivraisonEffectueEvent event) {
-        appliquerTransition(event.commandeId(), EnumEtatCommande.LIVREE, EnumEtatCommande.PAYEE, EnumEtatCommande.EXPEDIEE);
+        appliquerTransition(event.commandeId(), EnumEtatCommande.LIVREE);
     }
 
-    // Garde minimale contre un evenement recu hors-ordre ou en double : on ne
-    // transitionne que si l'etat actuel est bien l'un de ceux attendus avant
-    // ce changement. Le verrou pessimiste (findByIdPourMiseAJour) est ce qui
-    // rend cette garde fiable : sans lui, deux transitions concurrentes
-    // pourraient chacune lire l'etat AVANT l'ecriture de l'autre et toutes
-    // les deux passer la garde (lost update - vecu et corrige sur ce projet,
-    // voir memoire). La vraie machine d'etat avec historique horodate viendra
-    // a l'etape dediee ; ceci n'est qu'un garde-fou de coherence en attendant -
-    // mais un garde-fou qui refuse silencieusement n'est pas acceptable pour
-    // un systeme fiable : toute transition refusee est donc journalisee en
-    // warning, pour rester visible meme si personne ne regarde a ce moment-la.
-    private void appliquerTransition(Long commandeId, EnumEtatCommande nouvelEtat, EnumEtatCommande... etatsAttendus) {
+    // Applique une transition si et seulement si l'etat courant fait partie
+    // des sources autorisees pour l'etat demande (TRANSITIONS_AUTORISEES).
+    // Le verrou pessimiste (findByIdPourMiseAJour) rend cette lecture fiable
+    // sous concurrence : sans lui, deux transitions independantes pourraient
+    // chacune lire l'etat AVANT l'ecriture de l'autre et toutes les deux
+    // passer la garde (lost update - vecu et corrige sur ce projet, voir
+    // memoire). Chaque tentative - acceptee ou non - est journalisee dans
+    // historique_etat_commande : rien n'est jamais silencieusement perdu,
+    // meme une transition refusee reste consultable.
+    private void appliquerTransition(Long commandeId, EnumEtatCommande etatDemande) {
+        Set<EnumEtatCommande> etatsAcceptes = TRANSITIONS_AUTORISEES.get(etatDemande);
         commandeRepository.findByIdPourMiseAJour(commandeId).ifPresentOrElse(commande -> {
-            for (EnumEtatCommande etatAttendu : etatsAttendus) {
-                if (commande.getEtat() == etatAttendu) {
-                    commande.setEtat(nouvelEtat);
-                    commandeRepository.save(commande);
-                    return;
-                }
+            EnumEtatCommande etatAvant = commande.getEtat();
+            boolean accepte = etatsAcceptes.contains(etatAvant);
+
+            if (accepte) {
+                commande.setEtat(etatDemande);
+                commandeRepository.save(commande);
+            } else {
+                log.warn("Transition de la commande {} vers {} refusee : etat actuel {} n'est dans aucun des etats "
+                        + "acceptes {} (evenement hors-ordre ou duplique)",
+                        commandeId, etatDemande, etatAvant, etatsAcceptes);
             }
-            log.warn("Transition de la commande {} vers {} refusee : etat actuel {} n'est dans aucun des etats acceptes {} "
-                    + "(evenement hors-ordre ou duplique)",
-                    commandeId, nouvelEtat, commande.getEtat(), etatsAttendus);
-        }, () -> log.warn("Transition vers {} ignoree : commande {} introuvable", nouvelEtat, commandeId));
+
+            historiqueRepository.save(HistoriqueEtatCommande.builder()
+                    .commandeId(commandeId)
+                    .etatAvant(etatAvant)
+                    .etatDemande(etatDemande)
+                    .accepte(accepte)
+                    .horodatage(Instant.now())
+                    .build());
+        }, () -> log.warn("Transition vers {} ignoree : commande {} introuvable", etatDemande, commandeId));
     }
 }
